@@ -43,8 +43,8 @@
 
 **1. 克隆仓库**
 ```bash
-git clone [https://github.com/BingoCrypto/bnhy.git](https://github.com/YourUsername/bnhy.git)
-cd bnhy
+git clone https://github.com/BingoCrypto/binance-futures-dashboard.git
+cd binance-futures-dashboard
 ```
 
 **2. 创建并激活虚拟环境 (推荐)**
