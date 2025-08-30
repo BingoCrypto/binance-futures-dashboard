@@ -1,0 +1,5 @@
+flask
+pandas
+requests
+pandas-ta
+numpy

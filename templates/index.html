@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>币安合约多策略监控</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/2.0.8/css/dataTables.bootstrap5.css">
+    <style>
+        body { font-size: 0.9rem; }
+        .container-fluid { max-width: 1800px; }
+        .table-danger-custom { background-color: rgba(255, 0, 0, 0.15) !important; }
+        .table-info-custom { background-color: rgba(13, 202, 240, 0.15) !important; }
+        .signal-badge { cursor: pointer; margin: 2px; }
+        #strategy-filter .btn { margin: 2px; }
+        .loader {
+            border: 5px solid #f3f3f3; border-top: 5px solid #3498db;
+            border-radius: 50%; width: 50px; height: 50px;
+            animation: spin 1s linear infinite; margin: 50px auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <audio id="alert-sound" src="/static/alert.mp3" preload="auto"></audio>
+
+    <div class="container-fluid mt-4">
+        <div class="card shadow-sm">
+            <div class="card-header">
+                <div class="d-flex flex-wrap justify-content-between align-items-center">
+                    <h4 class="mb-2 me-3"><i class="bi bi-robot"></i> 币安合约多策略监控 (12h)</h4>
+                    <div class="d-flex align-items-center mb-2">
+                        <div class="form-check form-switch me-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="sound-toggle">
+                            <label class="form-check-label" for="sound-toggle"><i class="bi bi-volume-up-fill"></i> 警报声</label>
+                        </div>
+                        <span id="last-updated" class="text-muted small"></span>
+                    </div>
+                </div>
+
+                <div class="accordion" id="customAlertAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingOne">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseOne" aria-expanded="false" aria-controls="collapseOne">
+                                <i class="bi bi-tools me-2"></i> 自定义警报规则
+                            </button>
+                        </h2>
+                        <div id="collapseOne" class="accordion-collapse collapse" aria-labelledby="headingOne" data-bs-parent="#customAlertAccordion">
+                            <div class="accordion-body">
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-auto">
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" role="switch" id="custom-rule-toggle">
+                                            <label class="form-check-label" for="custom-rule-toggle">启用</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md">
+                                        <select class="form-select form-select-sm" id="custom-indicator">
+                                            <option value="rsi">RSI</option>
+                                            <option value="price">价格</option>
+                                            <option value="macd">MACD线</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-auto">
+                                        <select class="form-select form-select-sm" id="custom-operator">
+                                            <option value="<">&lt; (小于)</option>
+                                            <option value=">">&gt; (大于)</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md">
+                                        <select class="form-select form-select-sm" id="custom-target">
+                                            <option value="value">自定义数值</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md">
+                                        <input type="number" class="form-control form-control-sm" id="custom-value" placeholder="输入数值">
+                                    </div>
+                                </div>
+                                <div class="form-text mt-2">示例: (启用后) 设置 `RSI` `&lt;` `自定义数值` `25`，则RSI低于25的币种行将以蓝色高亮。</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="strategy-filter" class="btn-group btn-group-sm flex-wrap mt-2" role="group" aria-label="Preset Strategy Filter">
+                    <input type="radio" class="btn-check" name="strategy" id="all" value="" autocomplete="off" checked>
+                    <label class="btn btn-outline-secondary" for="all"><i class="bi bi-grid-fill"></i> 显示全部</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="rsi-sell" value="RSI 超卖" autocomplete="off">
+                    <label class="btn btn-outline-danger" for="rsi-sell">RSI 超卖</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="macd-gold" value="MACD 金叉" autocomplete="off">
+                    <label class="btn btn-outline-success" for="macd-gold">MACD 金叉</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="bb-low" value="跌破布林下轨" autocomplete="off">
+                    <label class="btn btn-outline-warning" for="bb-low">跌破布林下轨</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="rsi-buy" value="RSI 超买" autocomplete="off">
+                    <label class="btn btn-outline-info" for="rsi-buy">RSI 超买</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="macd-death" value="MACD 死叉" autocomplete="off">
+                    <label class="btn btn-outline-primary" for="macd-death">MACD 死叉</label>
+
+                    <input type="radio" class="btn-check" name="strategy" id="bb-high" value="突破布林上轨" autocomplete="off">
+                    <label class="btn btn-outline-dark" for="bb-high">突破布林上轨</label>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="loader-container" class="text-center">
+                    <div class="loader"></div>
+                    <p>正在初始化数据，首次加载需等待约1分钟...</p>
+                </div>
+                <div class="table-responsive" style="display: none;">
+                    <table id="market-table" class="table table-striped table-hover table-bordered" style="width:100%">
+                        <thead>
+                            <tr>
+                                <th>交易对</th>
+                                <th>最新价格</th>
+                                <th>24h 涨跌</th>
+                                <th>24h 成交额</th>
+                                <th>触发信号</th>
+                                <th>RSI</th>
+                                <th>MACD / Signal</th>
+                                <th>布林下轨 / 上轨</th>
+                                <th>更新时间</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.js"></script>
+    <script type="text/javascript" src="https://cdn.datatables.net/2.0.8/js/dataTables.bootstrap5.js"></script>
+
+    <script>
+        $(document).ready(function() {
+            // --- 全局状态变量 ---
+            const PRESET_ALERT_SIGNALS = new Set(["RSI 超卖", "MACD 金叉", "跌破布林下轨"]);
+            let alertSoundEnabled = false;
+            let currentAlertSymbols = new Set();
+            const alertSound = document.getElementById('alert-sound');
+            let customRule = {
+                enabled: false,
+                indicator: 'rsi',
+                operator: '<',
+                target: 'value',
+                value: 0
+            };
+
+            // --- 自定义筛选逻辑 ---
+            $.fn.dataTable.ext.search.push(function(settings, data, dataIndex) {
+                const selectedStrategy = $('input[name="strategy"]:checked').val();
+                if (!selectedStrategy) return true;
+                const triggeredSignals = data[4];
+                return triggeredSignals.includes(selectedStrategy);
+            });
+
+            const table = $('#market-table').DataTable({
+                "paging": true, "pageLength": 100,
+                "lengthMenu": [ [50, 100, 200, -1], [50, 100, 200, "全部"] ],
+                "info": true, "searching": true, "order": [[ 5, 'asc' ]],
+                "language": {
+                    "processing":     "处理中...",
+                    "lengthMenu":     "显示 _MENU_ 项结果",
+                    "zeroRecords":    "没有匹配的记录",
+                    "info":           "显示第 _START_ 至 _END_ 项结果，共 _TOTAL_ 项",
+                    "infoEmpty":      "显示第 0 至 0 项结果，共 0 项",
+                    "infoFiltered":   "(由 _MAX_ 项结果过滤)",
+                    "search":         "搜索:",
+                    "paginate": {
+                        "first":      "首页",
+                        "last":       "末页",
+                        "next":       "下页",
+                        "previous":   "上页"
+                    },
+                    "aria": {
+                        "sortAscending":  ": 激活以升序排列此列",
+                        "sortDescending": ": 激活以降序排列此列"
+                    }
+                },
+                    "aria": {
+                        "sortAscending":  ": 啟用正序排列",
+                        "sortDescending": ": 啟用倒序排列"
+                    }
+                },
+                "columns": [
+                    { "data": "symbol" }, { "data": "price" }, { "data": "change" }, { "data": "quoteVolume" },
+                    { "data": "signals", "render": function(data, type, row) {
+                        if (!data || data.length === 0) return '—';
+                        const badgeMap = { "RSI 超卖": "bg-danger", "MACD 金叉": "bg-success", "跌破布林下轨": "bg-warning text-dark", "RSI 超买": "bg-info text-dark", "MACD 死叉": "bg-primary", "突破布林上轨": "bg-dark" };
+                        return data.map(signal => `<span class="badge ${badgeMap[signal] || 'bg-secondary'}">${signal}</span>`).join(' ');
+                    }},
+                    { "data": "rsi" },
+                    { "data": null, "render": function(data, type, row) { return `${row.macd} / ${row.macds}`; }},
+                    { "data": null, "render": function(data, type, row) { return `${row.bbl} / ${row.bbu}`; }},
+                    { "data": "timestamp" }
+                ],
+                "createdRow": function(row, data, dataIndex) {
+                    // 预设规则高亮 (红色)
+                    if (data.signals && data.signals.some(s => PRESET_ALERT_SIGNALS.has(s))) {
+                        $(row).addClass('table-danger-custom');
+                    }
+                    // 自定义规则高亮 (蓝色)
+                    if (checkCustomRule(data)) {
+                        $(row).addClass('table-info-custom');
+                    }
+                    // 涨跌颜色
+                    const changeCell = $(row).find('td:eq(2)');
+                    const changeValue = parseFloat(data.change.replace('%', ''));
+                    if (changeValue > 0) changeCell.css('color', 'green');
+                    else if (changeValue < 0) changeCell.css('color', 'red');
+                }
+            });
+
+            // --- 核心函数 ---
+            async function updateData() {
+                try {
+                    const response = await fetch('/api/data');
+                    const data = await response.json();
+
+                    if (data.length > 0 && $('#loader-container').is(':visible')) {
+                        $('#loader-container').hide();
+                        $('.table-responsive').show();
+                    }
+
+                    handleAlerts(data);
+                    table.clear().rows.add(data).draw(false);
+                    $('#last-updated').text(`最后更新于: ${new Date().toLocaleTimeString()}`);
+                } catch (error) {
+                    console.error("获取数据失败:", error);
+                }
+            }
+
+            function handleAlerts(data) {
+                const newAlerts = new Set();
+                data.forEach(item => {
+                    // 检查预设警报
+                    if (item.signals && item.signals.some(s => PRESET_ALERT_SIGNALS.has(s))) {
+                        newAlerts.add(item.symbol);
+                    }
+                    // 检查自定义警报
+                    if (checkCustomRule(item)) {
+                        newAlerts.add(item.symbol);
+                    }
+                });
+
+                const newlyTriggered = new Set([...newAlerts].filter(x => !currentAlertSymbols.has(x)));
+                if (alertSoundEnabled && newlyTriggered.size > 0) {
+                    console.log("新警报触发:", ...newlyTriggered);
+                    alertSound.play().catch(e => console.error("音效播放失败:", e));
+                }
+                currentAlertSymbols = newAlerts;
+            }
+
+            function checkCustomRule(data) {
+                if (!customRule.enabled) return false;
+
+                let subject, target;
+
+                switch (customRule.indicator) {
+                    case 'rsi': subject = parseFloat(data.rsi); break;
+                    case 'price': subject = parseFloat(data.price); break;
+                    case 'macd': subject = parseFloat(data.macd); break;
+                }
+
+                switch (customRule.target) {
+                    case 'value': target = customRule.value; break;
+                    case 'bbu': target = parseFloat(data.bbu); break;
+                    case 'bbl': target = parseFloat(data.bbl); break;
+                    case 'macds': target = parseFloat(data.macds); break;
+                }
+
+                if (customRule.operator === '<') return subject < target;
+                if (customRule.operator === '>') return subject > target;
+                return false;
+            }
+
+            // --- 事件监听 ---
+            $('#strategy-filter input').on('change', () => table.draw());
+            $('#sound-toggle').on('change', function() { alertSoundEnabled = $(this).is(':checked'); });
+
+            // 动态更新自定义UI
+            $('#custom-indicator').on('change', function() {
+                const indicator = $(this).val();
+                const $targetSelect = $('#custom-target');
+                $targetSelect.html('<option value="value">自定义数值</option>'); // 重置
+                $('#custom-value').show();
+
+                if (indicator === 'price') {
+                    $targetSelect.append('<option value="bbu">布林带上轨</option>');
+                    $targetSelect.append('<option value="bbl">布林带下轨</option>');
+                } else if (indicator === 'macd') {
+                    $targetSelect.append('<option value="macds">MACD信号线</option>');
+                }
+            });
+
+            // 监听自定义目标变化
+            $('#custom-target').on('change', function() {
+                if ($(this).val() === 'value') {
+                    $('#custom-value').show();
+                } else {
+                    $('#custom-value').hide();
+                }
+            });
+
+            // 监听自定义规则表单的所有变化
+            $('#collapseOne input, #collapseOne select').on('change', function() {
+                customRule.enabled = $('#custom-rule-toggle').is(':checked');
+                customRule.indicator = $('#custom-indicator').val();
+                customRule.operator = $('#custom-operator').val();
+                customRule.target = $('#custom-target').val();
+                customRule.value = parseFloat($('#custom-value').val() || 0);
+                table.draw(); // 重新渲染表格以应用高亮
+            });
+
+            // --- 启动 ---
+            updateData();
+            setInterval(updateData, 30000);
+        });
+    </script>
+</body>
+</html>
